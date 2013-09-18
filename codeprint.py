@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+""" codeprint.py
 
-import sys
+functions to align a set of text files on as few pages as possible, while
+avoiding pagebreaks in files where possible
+"""
+
 import os
+import sys
 import argparse
 import itertools
 
@@ -10,33 +15,33 @@ import itertools
 def setup_args():
     """Sets up arguments and defaults, and returns the parsed results"""
 
-    p = argparse.ArgumentParser(
-        description="Prepare and format files for printing")
+    par = argparse.ArgumentParser(
+        description="Prepare and format files for par.inting")
 
-    p.add_argument('-o', '--out', metavar='path', default='printfile',
-                   help='specify filename (default: printfile)')
-    p.add_argument('-p', '--print', action='store_const',
+    par.add_argument('-o', '--out', metavar='path', default='printfile',
+                   help='specify filename (default: par.intfile)')
+    par.add_argument('-p', '--print', action='store_const',
                    dest='output', const=print_file, default=store_file,
                    help='print the created file immediately')
-    p.add_argument('-e', '--reencode', action='store_true',
-                   help='explicitly encode the print file in latin1')
-    p.add_argument('--header', metavar='txt',
-                   default=p.prog + ": " + os.environ['USER'],
-                   help='header text, only when printing directly')
-    p.add_argument('--language', metavar='lang',
+    par.add_argument('-e', '--reencode', action='store_true',
+                   help='explicitly encode the par.int file in latin1')
+    par.add_argument('--header', metavar='txt',
+                   default=par.prog + ": " + os.environ['USER'],
+                   help='header text, only when par.inting directly')
+    par.add_argument('--language', metavar='lang',
                    help='language to use for syntax highlighting')
-    p.add_argument('--printer', metavar='device',
-                   help='the printer device to use when printing')
-    p.add_argument('--lpp', metavar='int', type=int, default=73,
-                   help='lines per printed page')
-    p.add_argument('f', metavar='file', nargs='+',
+    par.add_argument('--printer', metavar='device',
+                   help='the par.inter device to use when par.inting')
+    par.add_argument('--lpp', metavar='int', type=int, default=73,
+                   help='lines par.r par.inted par.ge')
+    par.add_argument('f', metavar='file', nargs='+',
                    help='input files')
 
-    return p.parse_args()
+    return par.parse_args()
 
 
 # print the files directly
-def print_file(data):
+def print_file(args, data):
     """prints the given string with enscript
 
     print options depend on the arguments given to the script"""
@@ -50,37 +55,38 @@ def print_file(data):
         cmd_args += " -E{}".format(args.language)
     cmd_args += " " + args.out
 
-    store_file(data)
+    store_file(args, data)
 
     print("calling $ enscript{}".format(cmd_args))
     ret = os.system('enscript' + cmd_args)
     print("all done" if ret == 0 else "failed with code {}".format(ret))
 
 
-def get_font_size(n):
+def get_font_size(lpp):
     """takes the number of lines to fit on a page, and returns the
     corresponding font size"""
-    if n <= 68:
+    if lpp <= 68:
         return 10
-    if n <= 75:
+    if lpp <= 75:
         return 9
-    if n <= 83:
+    if lpp <= 83:
         return 8
     else:
         return 7
 
 
 # store the files in a new file for printing
-def store_file(data):
+def store_file(args, data):
     """takes a string and writes it to a file
 
     if the reencode option (-e) is given it will use latin-1"""
     try:
-        f = open(args.out, "w", encoding='latin1' if args.reencode else None)
-        f.write(data)
+        out = open(args.out, "w", encoding='latin1' if args.reencode else None)
+        out.write(data)
+        out.close()
     except IOError:
         print("Error: could not open "+args.out+" for writing")
-        os.exit(1)
+        sys.exit(1)
     print("output written to file: "+args.out)
 
 
@@ -91,21 +97,21 @@ def read_file(fname):
     if the file has a sibling with the same name followed by .run it's
     contents will be appended"""
     try:
-        file = ["*****************************************\n",
+        out = ["*****************************************\n",
                 "* FILE:  {:<30} *\n".format(fname),
                 "*****************************************\n"]
-        file += [l for l in open(fname, "r")]
+        out += [l for l in open(fname, "r")]
         if os.path.isfile(fname+".run"):
-            file += ["\n", "*** runtime example ***\n"]
-            file += [l for l in open(fname+".run", "r")]
-        return file
+            out += ["\n", "*** runtime example ***\n"]
+            out += [l for l in open(fname+".run", "r")]
+        return out
     except IOError:
         print("Error: "+fname+" is not a file")
-        os.exit(1)
+        sys.exit(1)
 
 
 # find the optimal order of the files
-def align_files(files):
+def align_files(files, lpp):
     """Takes a list of *files*, and tries to align them to pages
 
     The function generates all possible permutations of the list of files,
@@ -119,39 +125,44 @@ def align_files(files):
     best = 999999
     out = []
 
-    for fs in itertools.permutations(files):
+    for fileset in itertools.permutations(files):
         whitespace = 0          # white space counter
-        space = args.lpp        # space available on page
-        fset = []               # output candidate, white space is added
+        space = lpp             # space available on page
+        cand = []               # output candidate, white space is added
                                 # between the lines
-        for f in fs:
-            if (space < (len(f) % args.lpp)):   # alignment whitespace
-                fset.append(["\n"] * space)
+        for txt in fileset:
+            if (space < (len(txt) % lpp)):   # alignment whitespace
+                cand.append(["\n"] * space)
                 whitespace += space
 
-            fset.append(f)                      # add file to candidate
-            space = args.lpp - (len(f) % args.lpp)  # space at end of file
+            cand.append(txt)                  # add file to candidate
+            space = lpp - (len(txt) % lpp)    # space at end of file
 
             padding = min(2, space)         # add space at end of file
-            fset.append(["\n"] * padding)   # but take care not to spill
+            cand.append(["\n"] * padding)   # but take care not to spill
             space -= padding                # over to next page
                                             # doesn't count as whitespace
 
         if whitespace < best:       # select best candidate
             best = whitespace
-            out = fset
+            out = cand
             if best < len(files):   # we accept an average of 1 line per file
                 break
 
     return out
 
 
-# main
-args = setup_args()
-files = [read_file(f) for f in args.f]
+def main():
+    """ Reads the files, aligns them and calls the output function """
+    args = setup_args()
+    files = [read_file(f) for f in args.f]
 
-# rearrange
-files = align_files(files)
+    # rearrange
+    files = align_files(files, args.lpp)
 
-# output to printer or file
-args.output("".join(["".join(f) for f in files]))
+    # output to printer or file
+    args.output(args, "".join(["".join(f) for f in files]))
+
+
+if __name__ == "__main__":
+    main()
